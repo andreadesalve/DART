@@ -1,7 +1,6 @@
+import json
 import argparse
 from web3 import Web3
-from hexbytes import HexBytes
-from collections import deque
 from pprint import pprint
 
 # -----------------------------------------------------
