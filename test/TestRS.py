@@ -40,7 +40,7 @@ addressesOfUniversities = accounts[3+nEligibles:3+nEligibles+nUniversities]
 
 # Inizializza l'interfaccia per interagire con lo smart contract DART
 DARTArtifact = json.load(open(args.build))
-contract = w3.eth.contract(DARTArtifact['abi'], DARTArtifact['networks'][str(args.netid)]['address'])
+contract = w3.eth.contract(abi=DARTArtifact['abi'], address=DARTArtifact['networks'][str(args.netid)]['address'])
 
 PR = {
     'Alice': accounts[0],
@@ -103,7 +103,6 @@ contract.functions.newRole(RN['university']).call({'from': PR['StateA']})
 txHash = contract.functions.newRole(RN['university']).transact({'from': PR['StateA']})
 w3.eth.waitForTransactionReceipt(txHash)
 
-print(addressesOfUniversities)
 for uniAddr in addressesOfUniversities:
 	contract.functions.newRole(RN['professor']).call({'from': uniAddr})
 	txHash = contract.functions.newRole(RN['professor']).transact({'from': uniAddr})
