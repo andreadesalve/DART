@@ -1,5 +1,6 @@
 import json
 import argparse
+import csv
 from web3 import Web3
 from pprint import pprint
 
@@ -68,6 +69,7 @@ INV_RN = {v: k for k, v in RN.items()}
 print("\nROLENAMES:")
 pprint(RN)
 
+operations = {'newRole':[],'simpleMember':[],'simpleInclusion':[],'linkedInclusion':[],'intersectionInclusion':[]}
 
 # -----------------------------------------------------
 
@@ -79,42 +81,49 @@ txHash = contract.functions.newRole(RN['recommendationFrom']).transact({'from': 
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 contract.functions.newRole(RN['reviewer']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['reviewer']).transact({'from': PR['RecSys']})
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 contract.functions.newRole(RN['expert']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['expert']).transact({'from': PR['RecSys']})
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 contract.functions.newRole(RN['buyer']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['buyer']).transact({'from': PR['RecSys']})
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 contract.functions.newRole(RN['university']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['university']).transact({'from': PR['RecSys']})
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 contract.functions.newRole(RN['professor']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['professor']).transact({'from': PR['RecSys']})
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 contract.functions.newRole(RN['university']).call({'from': PR['StateA']})
 txHash = contract.functions.newRole(RN['university']).transact({'from': PR['StateA']})
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
+operations['newRole'].append(receipt['gasUsed'])
 
 for uniAddr in addressesOfUniversities:
 	contract.functions.newRole(RN['professor']).call({'from': uniAddr})
@@ -122,6 +131,7 @@ for uniAddr in addressesOfUniversities:
 	receipt=w3.eth.waitForTransactionReceipt(txHash)
 	print("newRole mined:")
 	pprint(dict(receipt))
+	operations['newRole'].append(receipt['gasUsed'])
 
 for idx, principalAddr in enumerate(addressesOfEligiblesExpert):
 	# Registra il principal come professore di una delle università
@@ -131,6 +141,7 @@ for idx, principalAddr in enumerate(addressesOfEligiblesExpert):
 	receipt=w3.eth.waitForTransactionReceipt(txHash)
 	print("SimpleMember mined:")
 	pprint(dict(receipt))
+	operations['simpleMember'].append(receipt['gasUsed'])
 
 for idx, principalAddr in enumerate(addressesOfEligiblesBuyer):
 	# Registra buyer a RecSys
@@ -140,6 +151,7 @@ for idx, principalAddr in enumerate(addressesOfEligiblesBuyer):
 	receipt=w3.eth.waitForTransactionReceipt(txHash)
 	print("SimpleMember mined:")
 	pprint(dict(receipt))
+	operations['simpleMember'].append(receipt['gasUsed'])
 
 for uniAddr in addressesOfUniversities:
 	# StateA.university ←− Uni_X
@@ -149,6 +161,7 @@ for uniAddr in addressesOfUniversities:
 	receipt=w3.eth.waitForTransactionReceipt(txHash)
 	print("SimpleMember mined:")
 	pprint(dict(receipt))
+	operations['simpleMember'].append(receipt['gasUsed'])
 # RecSys.university ←− StateA.university
 #d.addSimpleInclusion(RN['university'], SIExpression(PR['StateA'], RN['university']), 100, {'from': PR['RecSys']})
 contract.functions.addSimpleInclusion(RN['university'], PR['StateA'], RN['university'], 100).call({'from': PR['RecSys']})
@@ -156,6 +169,7 @@ txHash=contract.functions.addSimpleInclusion(RN['university'], PR['StateA'], RN[
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("SimpleInclusion mined:")
 pprint(dict(receipt))
+operations['simpleInclusion'].append(receipt['gasUsed'])
 # RecSys.expert ←− RecSys.university.professor
 #d.addLinkedInclusion(RN['expert'], LIExpression(PR['RecSys'], RN['university'], RN['professor']), 100, {'from': PR['RecSys']})
 contract.functions.addLinkedInclusion(RN['expert'],PR['RecSys'], RN['university'], RN['professor'], 100).call({'from': PR['RecSys']})
@@ -163,6 +177,7 @@ txHash=contract.functions.addLinkedInclusion(RN['expert'],PR['RecSys'], RN['univ
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("LinkedInclusion mined:")
 pprint(dict(receipt))
+operations['linkedInclusion'].append(receipt['gasUsed'])
 # RecSys.reviewer ←− RecSys.expert e RecSys.buyer
 #d.addIntersectionInclusion(RN['reviewer'], IIExpression(PR['RecSys'], RN['expert'], PR['RecSys'], RN['buyer']), 50, {'from': PR['RecSys']})
 contract.functions.addIntersectionInclusion(RN['reviewer'],PR['RecSys'], RN['expert'], PR['RecSys'], RN['buyer'], 100).call({'from': PR['RecSys']})
@@ -170,6 +185,7 @@ txHash=contract.functions.addIntersectionInclusion(RN['reviewer'],PR['RecSys'], 
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("Intersection mined:")
 pprint(dict(receipt))
+operations['intersectionInclusion'].append(receipt['gasUsed'])
 # Alice.recommendationFrom ←− RecSys.expert
 #d.addSimpleInclusion(RN['recommendationFrom'], SIExpression(PR['RecSys'], RN['expert']), 100, {'from': PR['Alice']})
 contract.functions.addSimpleInclusion(RN['recommendationFrom'],PR['RecSys'], RN['expert'], 100).call({'from': PR['Alice']})
@@ -177,8 +193,18 @@ txHash=contract.functions.addSimpleInclusion(RN['recommendationFrom'],PR['RecSys
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("SimpleInclusion mined:")
 pprint(dict(receipt))
+operations['simpleInclusion'].append(receipt['gasUsed'])
 
 print("Done")
+
+filename = "testScenarioCn"+str(nEligibles)+"uni"+str(nUniversities)+".csv"
+with open(filename,'w') as fop:
+    writer=csv.writer(fop,delimiter=' ', lineterminator='\n')
+    for key, vals in operations.items():
+        row = []
+        row.append(key)
+        row.extend(vals)
+        writer.writerow(row)
 
 # -----------------------------------------------------
 
