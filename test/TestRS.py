@@ -3,6 +3,7 @@ import argparse
 import csv
 from web3 import Web3
 from pprint import pprint
+import os
 
 # -----------------------------------------------------
 
@@ -22,6 +23,7 @@ args = parser.parse_args()
 
 nEligibles = args.n_eligibles
 nUniversities = args.n_universities
+totGas=0
 
 # Inizializza web3 connettendolo al provider locale ganache
 w3 = Web3(Web3.HTTPProvider(args.host))
@@ -82,6 +84,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 contract.functions.newRole(RN['reviewer']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['reviewer']).transact({'from': PR['RecSys']})
@@ -89,6 +92,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 contract.functions.newRole(RN['expert']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['expert']).transact({'from': PR['RecSys']})
@@ -96,6 +100,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 contract.functions.newRole(RN['buyer']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['buyer']).transact({'from': PR['RecSys']})
@@ -103,6 +108,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 contract.functions.newRole(RN['university']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['university']).transact({'from': PR['RecSys']})
@@ -110,6 +116,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 contract.functions.newRole(RN['professor']).call({'from': PR['RecSys']})
 txHash = contract.functions.newRole(RN['professor']).transact({'from': PR['RecSys']})
@@ -117,6 +124,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 contract.functions.newRole(RN['university']).call({'from': PR['StateA']})
 txHash = contract.functions.newRole(RN['university']).transact({'from': PR['StateA']})
@@ -124,6 +132,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("newRole mined:")
 pprint(dict(receipt))
 operations['newRole'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 for uniAddr in addressesOfUniversities:
 	contract.functions.newRole(RN['professor']).call({'from': uniAddr})
@@ -132,6 +141,7 @@ for uniAddr in addressesOfUniversities:
 	print("newRole mined:")
 	pprint(dict(receipt))
 	operations['newRole'].append(receipt['gasUsed'])
+	totGas += receipt['gasUsed']
 
 for idx, principalAddr in enumerate(addressesOfEligiblesExpert):
 	# Registra il principal come professore di una delle università
@@ -142,6 +152,7 @@ for idx, principalAddr in enumerate(addressesOfEligiblesExpert):
 	print("SimpleMember mined:")
 	pprint(dict(receipt))
 	operations['simpleMember'].append(receipt['gasUsed'])
+	totGas += receipt['gasUsed']
 
 for idx, principalAddr in enumerate(addressesOfEligiblesBuyer):
 	# Registra buyer a RecSys
@@ -152,6 +163,7 @@ for idx, principalAddr in enumerate(addressesOfEligiblesBuyer):
 	print("SimpleMember mined:")
 	pprint(dict(receipt))
 	operations['simpleMember'].append(receipt['gasUsed'])
+	totGas += receipt['gasUsed']
 
 for uniAddr in addressesOfUniversities:
 	# StateA.university ←− Uni_X
@@ -162,6 +174,7 @@ for uniAddr in addressesOfUniversities:
 	print("SimpleMember mined:")
 	pprint(dict(receipt))
 	operations['simpleMember'].append(receipt['gasUsed'])
+	totGas += receipt['gasUsed']
 # RecSys.university ←− StateA.university
 #d.addSimpleInclusion(RN['university'], SIExpression(PR['StateA'], RN['university']), 100, {'from': PR['RecSys']})
 contract.functions.addSimpleInclusion(RN['university'], PR['StateA'], RN['university'], 100).call({'from': PR['RecSys']})
@@ -170,6 +183,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("SimpleInclusion mined:")
 pprint(dict(receipt))
 operations['simpleInclusion'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 # RecSys.expert ←− RecSys.university.professor
 #d.addLinkedInclusion(RN['expert'], LIExpression(PR['RecSys'], RN['university'], RN['professor']), 100, {'from': PR['RecSys']})
 contract.functions.addLinkedInclusion(RN['expert'],PR['RecSys'], RN['university'], RN['professor'], 100).call({'from': PR['RecSys']})
@@ -178,6 +192,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("LinkedInclusion mined:")
 pprint(dict(receipt))
 operations['linkedInclusion'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 # RecSys.reviewer ←− RecSys.expert e RecSys.buyer
 #d.addIntersectionInclusion(RN['reviewer'], IIExpression(PR['RecSys'], RN['expert'], PR['RecSys'], RN['buyer']), 50, {'from': PR['RecSys']})
 contract.functions.addIntersectionInclusion(RN['reviewer'],PR['RecSys'], RN['expert'], PR['RecSys'], RN['buyer'], 100).call({'from': PR['RecSys']})
@@ -186,6 +201,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("Intersection mined:")
 pprint(dict(receipt))
 operations['intersectionInclusion'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 # Alice.recommendationFrom ←− RecSys.expert
 #d.addSimpleInclusion(RN['recommendationFrom'], SIExpression(PR['RecSys'], RN['expert']), 100, {'from': PR['Alice']})
 contract.functions.addSimpleInclusion(RN['recommendationFrom'],PR['RecSys'], RN['expert'], 100).call({'from': PR['Alice']})
@@ -194,6 +210,7 @@ receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("SimpleInclusion mined:")
 pprint(dict(receipt))
 operations['simpleInclusion'].append(receipt['gasUsed'])
+totGas+=receipt['gasUsed']
 
 print("Done")
 
@@ -208,6 +225,15 @@ with open(filename,'w') as fop:
 
 # -----------------------------------------------------
 
+filename = "testScenarioSUMCn"+str(nEligibles)+".csv"
+if os.path.exists(filename):
+    append_write = 'a' # append if already exists
+else:
+    append_write = 'w' # make a new file if not
+with open(filename,append_write) as fsum:
+    writer=csv.writer(fsum,delimiter=' ', lineterminator='\n')
+    writer.writerow([nUniversities,totGas])
+
 # Effettua una ricerca locale di tutti i membri a cui risulta assegnato il ruolo EPapers.canAccess
 print("\nSearching... ", end='')
 verifGas=contract.functions.backwardSearch(PR['Alice'], RN['recommendationFrom']).estimateGas()
@@ -216,6 +242,15 @@ print(f'On-chain backwardSearch gas: {verifGas}')
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("backwardSearch mined:")
 pprint(dict(receipt))
+
+filename = "testDartBSCn"+str(nEligibles)+".csv"
+if os.path.exists(filename):
+    append_write = 'a' # append if already exists
+else:
+    append_write = 'w' # make a new file if not
+with open(filename,append_write) as f:
+    writer=csv.writer(f,delimiter=' ', lineterminator='\n')
+    writer.writerow([receipt['gasUsed']])
 
 solCount = contract.functions.getProofSolutionCount(0).call()
 print(f'Solution count: {solCount}')
