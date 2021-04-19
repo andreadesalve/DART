@@ -236,8 +236,8 @@ with open(filename,append_write) as fsum:
 
 # Effettua una ricerca locale di tutti i membri a cui risulta assegnato il ruolo EPapers.canAccess
 print("\nSearching... ", end='')
-verifGas=contract.functions.backwardSearch(PR['Alice'], RN['recommendationFrom']).estimateGas()
-txHash=contract.functions.backwardSearch(PR['Alice'], RN['recommendationFrom']).transact({'from': PR['Alice']})
+verifGas=contract.functions.search(PR['Alice'], RN['recommendationFrom']).estimateGas()
+txHash=contract.functions.search(PR['Alice'], RN['recommendationFrom']).transact({'from': PR['Alice']})
 print(f'On-chain backwardSearch gas: {verifGas}')
 receipt=w3.eth.waitForTransactionReceipt(txHash)
 print("backwardSearch mined:")
@@ -252,9 +252,9 @@ with open(filename,append_write) as f:
     writer=csv.writer(f,delimiter=' ', lineterminator='\n')
     writer.writerow([receipt['gasUsed']])
 
-solCount = contract.functions.getProofSolutionCount(0).call()
+solCount = contract.functions.getRoleSolutionsCount(0,PR['Alice'], RN['recommendationFrom']).call()
 print(f'Solution count: {solCount}')
 proofIndex=0
 for i in range(solCount) :
-	currSol = contract.functions.getProofSolution(proofIndex, i).call()
+	currSol = contract.functions.getRoleSolution(proofIndex,PR['Alice'], RN['recommendationFrom'], i).call()
 	print("Member #",i,": ", currSol[0] ,"\t",currSol[1])
