@@ -1,6 +1,6 @@
 pragma solidity >=0.6.5 <0.7;
 
-library WMemberSet {
+library WAddressSet {
 
 	struct Set {
 		mapping(address => uint) map;
@@ -14,22 +14,22 @@ library WMemberSet {
 		}
 	}
 
-	function insert(Set storage self, address _member, uint8 _weight) internal returns(bool, uint) {
+	function insert(Set storage self, address _member, uint8 _weight) internal returns(bool) {
 		uint pointer = self.map[_member];
 
 		if(pointer != 0) {
 			if(uint8(byte(self.list[pointer - 1] << 160)) < _weight) {
 				self.list[pointer - 1] = packEntry(_member, _weight);
-				return (true, pointer - 1);
+				return true;
 			}
 			else
-				return (false, pointer - 1);
+				return false;
 		}
 
 		self.list.push(packEntry(_member, _weight));
-		pointer = count(self);
+		pointer = size(self);
 		self.map[_member] = pointer;
-		return (true, pointer - 1);
+		return true;
 	}
 
 	function update(Set storage self, address _member, uint8 _weight) internal {
@@ -42,7 +42,7 @@ library WMemberSet {
 	function remove(Set storage self, address _member) internal {
 		uint pointerToRemove = self.map[_member];
 		require(pointerToRemove != 0, "entry not found");
-		uint lastPointer = count(self);
+		uint lastPointer = size(self);
 
 		if(pointerToRemove != lastPointer) {
 			bytes21 lastEntry = self.list[lastPointer - 1];
@@ -54,7 +54,7 @@ library WMemberSet {
 		self.map[_member] = 0;
 	}
 
-	function count(Set storage self) internal view returns(uint) {
+	function size(Set storage self) internal view returns(uint) {
 		return self.list.length;
 	}
 

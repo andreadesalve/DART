@@ -1,353 +1,301 @@
 pragma solidity >=0.6.5 <0.7;
 
-import "./dataStructures/MemberSet.sol";
-import "./dataStructures/SimpleInclusionSet.sol";
-import "./dataStructures/LinkedInclusionSet.sol";
-import "./dataStructures/IntersectionInclusionSet.sol";
-
-import "./dataStructures/WMemberSet.sol";
-import "./dataStructures/WSimpleInclusionSet.sol";
-import "./dataStructures/WLinkedInclusionSet.sol";
-import "./dataStructures/WIntersectionInclusionSet.sol";
-
+import "./dataStructures/Bytes32Set.sol";
+import "./dataStructures/WBytes32Set.sol";
+import "./dataStructures/WAddressSet.sol";
 
 contract RT {
 
-	using MemberSet for MemberSet.Set;
-	using SimpleInclusionSet for SimpleInclusionSet.Set;
-	using LinkedInclusionSet for LinkedInclusionSet.Set;
-	using IntersectionInclusionSet for IntersectionInclusionSet.Set;
+    using Bytes32Set for Bytes32Set.Set;
+    using WBytes32Set for WBytes32Set.Set;
+    using WAddressSet for WAddressSet.Set;
 
-	using WMemberSet for WMemberSet.Set;
-	using WSimpleInclusionSet for WSimpleInclusionSet.Set;
-	using WLinkedInclusionSet for WLinkedInclusionSet.Set;
-	using WIntersectionInclusionSet for WIntersectionInclusionSet.Set;
+    address constant NULL_ADDRESS = address(0x0);
+    bytes2 constant NULL_ROLENAME = 0x0000;
 
-	struct Role {
-		bool exists;
+    uint constant MAX_WEIGHT = 100;
+    uint8 constant MAX_WEIGHT_BYTE = 100;
 
-		WMemberSet.Set simpleMembers;
-		WSimpleInclusionSet.Set simpleInclusions;
-		WLinkedInclusionSet.Set linkedInclusions;
-		WIntersectionInclusionSet.Set intersectionInclusions;
+    byte constant EXPR_NC = 0x00;
+    byte constant EXPR_SI = 0x01;
+    byte constant EXPR_LI = 0x02;
+    byte constant EXPR_II = 0x03;
+
+    struct Expression {
+        byte exprType;
+
+        address addrA;
+        bytes2 roleA;
+        address addrB;
+        bytes2 roleB;
+
+        WBytes32Set.Set inEdges;
+    }
+
+    function packExpr(address addrA, bytes2 roleA, address addrB, bytes2 roleB) internal pure returns(bytes32) {
+        return keccak256(abi.encodePacked(addrA, roleA, addrB, roleB));
+    }
+
+    function packExpr(address addrA, bytes2 roleA, bytes2 roleB) internal pure returns(bytes32) {
+        return keccak256(abi.encodePacked(addrA, roleA, NULL_ADDRESS, roleB));
+    }
+
+    function packExpr(address addrA, bytes2 roleA) internal pure returns(bytes32) {
+        return keccak256(abi.encodePacked(addrA, roleA, NULL_ADDRESS, NULL_ROLENAME));
+    }
+
+
+    // ----------------------------------------------------- //
+
+
+    mapping(bytes32 => Expression) exprs;
+    mapping(bytes32 => WAddressSet.Set) members;
+
+    modifier rolenameNotNull(bytes2 _rolename) {
+        require(_rolename != 0x00, "invalid rolename");
+        _;
+    }
+
+    function newRole(bytes2 _rolename) external rolenameNotNull(_rolename) {
+        Expression storage expr = exprs[packExpr(msg.sender, _rolename)];
+        require(expr.exprType == EXPR_NC, "local role already exists");
+
+        expr.exprType = EXPR_SI;
+        expr.addrA = msg.sender;
+        expr.roleA = _rolename;
+    }
+
+    function addSimpleMember(bytes2 _localRolename, address _member, uint8 _weight)
+            external returns(bool) {
+
+        bytes32 exprId = packExpr(msg.sender, _localRolename);
+        require(exprs[exprId].exprType == EXPR_SI, "local role does not exists");
+
+        return members[exprId].insert(_member, _weight);
 	}
 
-	mapping(address => mapping(bytes2 => Role)) policies;
+    function removeSimpleMember(bytes2 _localRolename, address _member)
+            external {
 
+        bytes32 exprId = packExpr(msg.sender, _localRolename);
+        require(exprs[exprId].exprType == EXPR_SI, "local role does not exists");
 
-	// ----------------------------------------------------- //
-
-
-	modifier localRoleExists(bytes2 _rolename) {
-		require(policies[msg.sender][_rolename].exists, "local role does not exist");
-		_;
+        members[exprId].remove(_member);
 	}
 
-	function newRole(bytes2 _rolename) external {
-		require(!policies[msg.sender][_rolename].exists, "local role already exists");
-		policies[msg.sender][_rolename].exists = true;
+    function addSimpleInclusion(bytes2 _localRolename, address _principal, bytes2 _rolename, uint8 _weight)
+            external returns(bool) {
+
+        bytes32 localRoleId = packExpr(msg.sender, _localRolename);
+        Expression storage localRole = exprs[localRoleId];
+        require(localRole.exprType == EXPR_SI, "local role does not exists");
+
+        bytes32 remoteRoleId = packExpr(_principal, _rolename);
+        Expression storage remoteRole = exprs[remoteRoleId];
+        require(remoteRole.exprType == EXPR_SI, "remote role does not exists");
+
+        return localRole.inEdges.insert(remoteRoleId, _weight);
 	}
 
-	function addSimpleMember(bytes2 _localRolename, address _member, uint8 _weight) external
-			localRoleExists(_localRolename)
-			returns(bool, uint) {
+    function addLinkedInclusion(bytes2 _localRolename, address _principal, bytes2 _firstRolename, bytes2 _secondRolename, uint8 _weight)
+            external returns(bool) {
 
-		return policies[msg.sender][_localRolename].simpleMembers.insert(_member, _weight);
-	}
+        bytes32 localRoleId = packExpr(msg.sender, _localRolename);
+        Expression storage localRole = exprs[localRoleId];
+        require(localRole.exprType == EXPR_SI, "local role does not exists");
 
-	function addSimpleInclusion(bytes2 _localRolename, address _principal, bytes2 _rolename, uint8 _weight) external
-			localRoleExists(_localRolename)
-			returns(bool, uint) {
+        require(exprs[packExpr(_principal, _firstRolename)].exprType == EXPR_SI, "remote role does not exists");
 
-		require(policies[_principal][_rolename].exists, "remote role does not exist");
-		return policies[msg.sender][_localRolename].simpleInclusions.insert(_principal, _rolename, _weight);
-	}
+        bytes32 linkedExprId = packExpr(_principal, _firstRolename, _secondRolename);
+        Expression storage linkedExpr = exprs[linkedExprId];
+        if(linkedExpr.exprType == EXPR_NC) {
+            linkedExpr.exprType = EXPR_LI;
+            linkedExpr.addrA = _principal;
+            linkedExpr.roleA = _firstRolename;
+            linkedExpr.roleB = _secondRolename;
+        }
 
-	function addLinkedInclusion(bytes2 _localRolename, address _principal, bytes2 _firstRolename, bytes2 _secondRolename, uint8 _weight) external
-			localRoleExists(_localRolename)
-			returns (bool, uint) {
+        return localRole.inEdges.insert(linkedExprId, _weight);
+    }
 
-		require(policies[_principal][_firstRolename].exists, "1st remote role does not exist");
-		return policies[msg.sender][_localRolename].linkedInclusions.insert(_principal, _firstRolename, _secondRolename, _weight);
-	}
-
-	function addIntersectionInclusion(bytes2 _localRolename, address _firstPrincipal, bytes2 _firstRolename,
+    function addIntersectionInclusion(bytes2 _localRolename, address _firstPrincipal, bytes2 _firstRolename,
 			address _secondPrincipal, bytes2 _secondRolename, uint8 _weight) external
-			returns (bool, uint) {
+			returns (bool) {
 
-		require(policies[msg.sender][_localRolename].exists, "local role does not exist"); // no modifier: stack too deep
-		require(policies[_firstPrincipal][_firstRolename].exists, "1st remote role does not exist");
-		require(policies[_secondPrincipal][_secondRolename].exists, "2nd remote role does not exist");
-		return policies[msg.sender][_localRolename].intersectionInclusions.insert(_firstPrincipal, _firstRolename,
-			_secondPrincipal, _secondRolename, _weight);
-	}
+        bytes32 localRoleId = packExpr(msg.sender, _localRolename);
+        Expression storage localRole = exprs[localRoleId];
+        require(localRole.exprType == EXPR_SI, "local role does not exists");
 
+        require(exprs[packExpr(_firstPrincipal, _firstRolename)].exprType == EXPR_SI, "first remote role does not exists");
 
-	// ----------------------------------------------------- //
+        require(exprs[packExpr(_secondPrincipal, _secondRolename)].exprType == EXPR_SI, "second remote role does not exists");
 
 
-	function removeSimpleMember(bytes2 _localRolename, address _member) external
-			localRoleExists(_localRolename) {
+        if((_secondPrincipal > _firstPrincipal) || (_firstPrincipal >= _secondPrincipal && _secondRolename > _firstRolename))
+            (_firstPrincipal, _firstRolename, _secondPrincipal, _secondRolename) = (_secondPrincipal, _secondRolename, _firstPrincipal, _firstRolename);
 
-		policies[msg.sender][_localRolename].simpleMembers.remove(_member);
-	}
+        bytes32 intersectionExprId = packExpr(_firstPrincipal, _firstRolename, _secondPrincipal, _secondRolename);
+        Expression storage intersectionExpr = exprs[intersectionExprId];
+        if(intersectionExpr.exprType == EXPR_NC) {
+            intersectionExpr.exprType = EXPR_II;
+            intersectionExpr.addrA = _firstPrincipal;
+            intersectionExpr.roleA = _firstRolename;
+            intersectionExpr.addrB = _secondPrincipal;
+            intersectionExpr.roleB = _secondRolename;
+        }
 
-	function removeSimpleInclusion(bytes2 _localRolename, address _principal, bytes2 _rolename) external
-			localRoleExists(_localRolename) {
-
-		policies[msg.sender][_localRolename].simpleInclusions.remove(_principal, _rolename);
-	}
-
-	function removeLinkedInclusion(bytes2 _localRolename, address _principal, bytes2 _firstRolename, bytes2 _secondRolename) external
-			localRoleExists(_localRolename) {
-
-		policies[msg.sender][_localRolename].linkedInclusions.remove(_principal, _firstRolename, _secondRolename);
-	}
-
-	function removeIntersectionInclusion(bytes2 _localRolename, address _firstPrincipal, bytes2 _firstRolename,
-			address _secondPrincipal, bytes2 _secondRolename) external
-			localRoleExists(_localRolename) {
-
-		policies[msg.sender][_localRolename].intersectionInclusions.remove(_firstPrincipal, _firstRolename, _secondPrincipal, _secondRolename);
-	}
+        return localRole.inEdges.insert(intersectionExprId, _weight);
+    }
 
 
-	// ----------------------------------------------------- //
 
+    // ----------------------------------------------------- //
 
-	function getSimpleMembersCount(bytes2 _localRolename) external view
-			localRoleExists(_localRolename)
-			returns(uint) {
+    struct ProofNode {
+        byte exprType;
+        WAddressSet.Set solutions;
+        WBytes32Set.Set outEdges;
+    }
 
-		return policies[msg.sender][_localRolename].simpleMembers.count();
-	}
-
-	function getSimpleInclusionsCount(bytes2 _localRolename) external view
-			localRoleExists(_localRolename)
-			returns(uint) {
-
-		return policies[msg.sender][_localRolename].simpleInclusions.count();
-	}
-
-	function getLinkedInclusionsCount(bytes2 _localRolename) external view
-			localRoleExists(_localRolename)
-			returns(uint) {
-
-		return policies[msg.sender][_localRolename].linkedInclusions.count();
-	}
-
-	function getIntersectionInclusionsCount(bytes2 _localRolename) external view
-			localRoleExists(_localRolename)
-			returns(uint) {
-
-		return policies[msg.sender][_localRolename].intersectionInclusions.count();
-	}
-
-	function getSimpleMember(bytes2 _localRolename, uint _index) external view
-			localRoleExists(_localRolename)
-			returns(address, uint8) {
-
-		return policies[msg.sender][_localRolename].simpleMembers.get(_index);
-	}
-
-	function getSimpleInclusion(bytes2 _localRolename, uint _index) external view
-			localRoleExists(_localRolename)
-			returns(address, bytes2, uint8) {
-
-		return policies[msg.sender][_localRolename].simpleInclusions.get(_index);
-	}
-
-	function getLinkedInclusion(bytes2 _localRolename, uint _index) external view
-			localRoleExists(_localRolename)
-			returns(address, bytes2, bytes2, uint8) {
-
-		return policies[msg.sender][_localRolename].linkedInclusions.get(_index);
-	}
-
-	function getIntersectionInclusion(bytes2 _localRolename, uint _index) external view
-			localRoleExists(_localRolename)
-			returns(address, bytes2, address, bytes2, uint8) {
-
-		return policies[msg.sender][_localRolename].intersectionInclusions.get(_index);
-	}
-
-
-	// ----------------------------------------------------- //
-
-	uint8 constant N_NODETYPES = 4;
-	uint constant MAX_WEIGHT = 100; // Per quanto sia uint, deve essere rappresentabile in uint8
-	uint8 constant MAX_WEIGHT_BYTE = 100;
-
-	enum NodeType {
-		SIMPLE_MEMBER,
-		SIMPLE_INCLUSION,
-		LINKED_INCLUSION,
-		INTERSECTION_INCLUSION
-	}
-
-	struct NodeRef {
-		NodeType nodeType;
-		uint8 weight;
-		uint index;
-	}
-
-	struct WaitingIntersectionEntry {
-		address member;
+    struct WaitingIntersectionSolution {
 		uint8 weight;
 		bool exists;
 		bool isSolution;
 	}
 
-	struct ProofGraph {
-		// Nodes
-		MemberSet.Set simpleMembers;
-		SimpleInclusionSet.Set simpleInclusions;
-		LinkedInclusionSet.Set linkedInclusions;
-		IntersectionInclusionSet.Set intersectionInclusions;
+    struct ProofGraph {
+        mapping(bytes32 => ProofNode) nodeMap;
+        bytes32[] nodeList;
 
-		WMemberSet.Set[][N_NODETYPES] solutions;
-		mapping(address => WaitingIntersectionEntry)[] waitingIntersectionSolutions;
+        mapping(bytes32 => bytes32[]) linkingMonitors;
+        mapping(bytes32 => mapping(address => WaitingIntersectionSolution)) waitingIntersectionSolutions;
+    }
 
-		// Edges
-		NodeRef[][][N_NODETYPES] edges;
-		uint[][] linkedEdges;
-
-		// Queue
-		mapping(uint => NodeRef) queue;
-		uint first;
-		uint last;
-	}
+    ProofGraph[] proofGraphs;
 
 
+    function addProofNode(ProofGraph storage _p, bytes32 _exprId, byte _exprType) internal returns(bool, ProofNode storage) {
+        ProofNode storage proofNode = _p.nodeMap[_exprId];
+        if(proofNode.exprType != EXPR_NC) return (false, proofNode);
 
-	function initQueue(ProofGraph storage self) internal {
-		(self.first, self.last) = (1, 0);
-	}
+        proofNode.exprType = _exprType;
+        _p.nodeList.push(_exprId);
+        return (true, proofNode);
+    }
 
-	function enqueue(ProofGraph storage self, NodeRef memory _nodeRef) internal {
-		self.last += 1;
-		self.queue[self.last] = _nodeRef;
-	}
+    function addProofEdge(ProofGraph storage _p, ProofNode storage _from, ProofNode storage _toNode, bytes32 _toId, uint8 _weight, bool _noTransfer) internal {
+        bool isNew = _from.outEdges.insert(_toId, _weight);
 
-	function isQueueEmpty(ProofGraph storage self) internal view returns(bool) {
-		return (self.last < self.first);
-	}
+        if(!_noTransfer && isNew) {
+            // trasferisci le soluzioni
+            uint8 w;
+            address a;
+            WAddressSet.Set storage solutions = _from.solutions;
 
-	function dequeue(ProofGraph storage self) internal returns(NodeRef memory nodeRef) {
-		nodeRef = self.queue[self.first];
-		delete self.queue[self.first];
-		self.first += 1;
-	}
+            for(uint i = 0; i < solutions.size(); i++) {
+                (a, w) = solutions.get(i);
+                addSolution(_p, _toNode, _toId, a, mulWeight(w, _weight));
+            }
+        }
+    }
+
+    function search(address _principal, bytes2 _rolename) public returns(uint) {
+        bytes32 currId = packExpr(_principal, _rolename);
+        require(exprs[currId].exprType != EXPR_NC);
+
+        ProofGraph storage p = proofGraphs.push();
+        Expression storage currExpr = exprs[currId];
+        (, ProofNode storage currNode) = addProofNode(p, currId, EXPR_SI);
+        uint queueIndex;
+
+        WAddressSet.Set storage wAddressSet;
+        ProofNode storage node;
+
+        uint i;
+        bool isNew;
+        address addr;
+        uint8 weight;
+        bytes32 exprId;
+
+        while(true) {
+
+            if(currExpr.exprType == EXPR_SI) {
+                // currExpr: addrA.roleA
+
+                // Aggiungi i membri semplici alle soluzioni di curr
+                wAddressSet = members[currId];
+                for(i = 0; i < wAddressSet.size(); i++) {
+                    (addr, weight) = wAddressSet.get(i);
+                    addSolution(p, currNode, currId, addr, weight);
+                }
+
+                // Aggiungi al proof graph tutti i nodi che si collegano a curr
+                for(i = 0; i < currExpr.inEdges.size(); i++) {
+                    (exprId, weight) = currExpr.inEdges.get(i);
+                    (isNew, node) = addProofNode(p, exprId, exprs[exprId].exprType);
+                    addProofEdge(p, node, currNode, currId, weight, isNew);
+                }
+            }
+            else if(currExpr.exprType == EXPR_LI) {
+                // currExpr: addrA.roleA.roleB
+
+                exprId = packExpr(currExpr.addrA, currExpr.roleA);
+                p.linkingMonitors[exprId].push(currId);
+                (isNew, node) = addProofNode(p, exprId, EXPR_SI);
+                if(!isNew) {
+                    // Il nodo addrA.roleA a cui si riferisce la linking inclusion esiste già:
+                    // esamina le sue soluzioni
+                    wAddressSet = node.solutions;
+                    for(i = 0; i < wAddressSet.size(); i++) {
+                        (addr, weight) = wAddressSet.get(i);
+                        processLinkingSolution(p, currNode, currId, addr, currExpr.roleB, weight);
+                    }
+                }
+            }
+            else if(currExpr.exprType == EXPR_II) {
+                // currExpr: addrA.roleA ∩ addrB.roleB
+
+                exprId = packExpr(currExpr.addrA, currExpr.roleA);
+                (isNew, node) = addProofNode(p, exprId, EXPR_SI);
+                addProofEdge(p, node, currNode, currId, MAX_WEIGHT_BYTE, isNew);
+
+                exprId = packExpr(currExpr.addrB, currExpr.roleB);
+                (isNew, node) = addProofNode(p, exprId, EXPR_SI);
+                addProofEdge(p, node, currNode, currId, MAX_WEIGHT_BYTE, isNew);
+            }
+
+            queueIndex++;
+            if(queueIndex >= p.nodeList.length) break;
+            currId = p.nodeList[queueIndex];
+            currExpr = exprs[currId];
+            currNode = p.nodeMap[currId];
+        }
+
+        return proofGraphs.length - 1;
+    }
 
 
-	function addSimpleMemberNode(ProofGraph storage self, address _member) internal returns(NodeRef memory) {
-		uint index;
-		bool isNew;
-		(isNew, index) = self.simpleMembers.insert(_member);
-
-		NodeRef memory newNodeRef = NodeRef(NodeType.SIMPLE_MEMBER, 0, index);
-		if(isNew)
-			self.edges[uint(NodeType.SIMPLE_MEMBER)].push();
-
-		return newNodeRef;
-	}
-
-	function addSimpleInclusionNode(ProofGraph storage self, address _principal, bytes2 _rolename) internal returns(NodeRef memory) {
-		uint index;
-		bool isNew;
-		(isNew, index) = self.simpleInclusions.insert(_principal, _rolename);
-
-		NodeRef memory newNodeRef = NodeRef(NodeType.SIMPLE_INCLUSION, 0, index);
-		if(isNew) {
-			self.edges[uint(NodeType.SIMPLE_INCLUSION)].push();
-			self.solutions[uint(NodeType.SIMPLE_INCLUSION)].push();
-			self.linkedEdges.push();
-			enqueue(self, newNodeRef);
-		}
-
-		return newNodeRef;
-	}
-
-	function addLinkedInclusionNode(ProofGraph storage self, address _principal, bytes2 _firstRolename, bytes2 _secondRolename) internal
-			returns(NodeRef memory) {
-
-		uint index;
-		bool isNew;
-		(isNew, index) = self.linkedInclusions.insert(_principal, _firstRolename, _secondRolename);
-
-		NodeRef memory newNodeRef = NodeRef(NodeType.LINKED_INCLUSION, 0, index);
-		if(isNew) {
-			self.edges[uint(NodeType.LINKED_INCLUSION)].push();
-			self.solutions[uint(NodeType.LINKED_INCLUSION)].push();
-			enqueue(self, newNodeRef);
-		}
-
-		return newNodeRef;
-	}
-
-	function addIntersectionInclusionNode(ProofGraph storage self, address _firstPrincipal, bytes2 _firstRolename,
-			address _secondPrincipal, bytes2 _secondRolename) internal
-			returns(NodeRef memory) {
-
-		uint index;
-		bool isNew;
-		(isNew, index) = self.intersectionInclusions.insert(_firstPrincipal, _firstRolename, _secondPrincipal, _secondRolename);
-
-		NodeRef memory newNodeRef = NodeRef(NodeType.INTERSECTION_INCLUSION, 0, index);
-		if(isNew) {
-			self.edges[uint(NodeType.INTERSECTION_INCLUSION)].push();
-			self.solutions[uint(NodeType.INTERSECTION_INCLUSION)].push();
-			self.waitingIntersectionSolutions.push();
-			enqueue(self, newNodeRef);
-		}
-
-		return newNodeRef;
-	}
-
-	function mulWeight(uint8 a, uint8 b) internal pure returns(uint8) {
+    function mulWeight(uint8 a, uint8 b) internal pure returns(uint8) {
 		return uint8((uint(a) * uint(b)) / MAX_WEIGHT);
 	}
 
-	function addEdge(ProofGraph storage self, NodeRef memory _fromRef, NodeRef memory _toRef) internal {
-		self.edges[uint(_fromRef.nodeType)][uint(_fromRef.index)].push(_toRef);
+    function processLinkingSolution(ProofGraph storage _p, ProofNode storage _linkingNode, bytes32 _linkingId, address _addrB, bytes2 _roleB, uint8 _weight) internal {
 
-		if(_fromRef.nodeType == NodeType.SIMPLE_MEMBER) {
-			addSolution(self, _toRef, self.simpleMembers.get(_fromRef.index), _toRef.weight);
-		}
-		else {
-			WMemberSet.Set storage fromSolutions = self.solutions[uint(_fromRef.nodeType)][_fromRef.index];
-			address currSolution;
-			uint8 currWeight;
+        bytes32 exprId = packExpr(_addrB, _roleB);
 
-			for(uint i = 0; i < fromSolutions.count(); i++) {
-				(currSolution, currWeight) = fromSolutions.get(i);
-				addSolution(self, _toRef, currSolution, mulWeight(currWeight, _toRef.weight));
-			}
-		}
-	}
+        if(exprs[exprId].exprType != EXPR_NC) {
+            // _addrB.roleB è una espressione definita, procedi alla creazione dell'arco di link
+            (bool isNew, ProofNode storage node) = addProofNode(_p, exprId, EXPR_SI);
+            addProofEdge(_p, node, _linkingNode, _linkingId, _weight, isNew);
+        }
+    }
 
-	function addLinkedEdge(ProofGraph storage self, NodeRef memory fromRef, NodeRef memory toRef) internal {
-		self.linkedEdges[fromRef.index].push(toRef.index);
+    function addSolution(ProofGraph storage _p, ProofNode storage _toNode, bytes32 _toId, address _solution, uint8 _weight) internal {
+        bool isNew;
+        uint8 weight = _weight;
 
-		WMemberSet.Set storage fromSolutions = self.solutions[uint(NodeType.SIMPLE_INCLUSION)][fromRef.index];
-		address currSolution;
-		bytes2 roleB;
-		uint8 currWeight;
-		(,,roleB) = self.linkedInclusions.get(toRef.index);
-
-		for(uint i = 0; i < fromSolutions.count(); i++) {
-			(currSolution, currWeight) = fromSolutions.get(i);
-			if(policies[currSolution][roleB].exists)
-				addEdge(self, addSimpleInclusionNode(self, currSolution, roleB), NodeRef(NodeType.LINKED_INCLUSION, currWeight, toRef.index));
-		}
-	}
-
-	function addSolution(ProofGraph storage self, NodeRef memory _nodeRef, address _solution, uint8 _weight) internal {
-		bool isNew;
-		uint8 weight = _weight;
-
-		if(_nodeRef.nodeType == NodeType.INTERSECTION_INCLUSION) {
-			WaitingIntersectionEntry storage waitingSolution = self.waitingIntersectionSolutions[_nodeRef.index][_solution];
+        if(_toNode.exprType == EXPR_II) {
+            WaitingIntersectionSolution storage waitingSolution = _p.waitingIntersectionSolutions[_toId][_solution];
 
 			if(waitingSolution.exists) {
 
@@ -356,109 +304,50 @@ contract RT {
 					waitingSolution.isSolution = true;
 				}
 
-				(isNew,) = self.solutions[uint(NodeType.INTERSECTION_INCLUSION)][uint(_nodeRef.index)].insert(_solution, weight);
+                isNew = _toNode.solutions.insert(_solution, weight);
 			}
 			else {
 				waitingSolution.exists = true;
-				waitingSolution.member = _solution;
 				waitingSolution.weight = weight;
 			}
+        }
+        else {
+            isNew = _toNode.solutions.insert(_solution, weight);
+        }
 
-		}
-		else {
-			(isNew,) = self.solutions[uint(_nodeRef.nodeType)][_nodeRef.index].insert(_solution, weight);
-		}
+        if(isNew) {
+            bytes32[] storage bytes32Array;
+            WBytes32Set.Set storage connectedNodes = _toNode.outEdges;
+            bytes32 exprId;
+            uint8 w;
+            uint i;
 
-		if(isNew) {
-			NodeRef[] storage connectedNodes = self.edges[uint(_nodeRef.nodeType)][_nodeRef.index];
-			NodeRef storage currConnectedNode;
+            // La soluzione è nuova per il nodo in questione: propagala ai nodi connessi
+            for(i = 0; i < connectedNodes.size(); i++) {
+                (exprId, w) = connectedNodes.get(i);
+                addSolution(_p, _p.nodeMap[exprId], exprId, _solution, mulWeight(_weight, w));
+            }
 
-			for(uint i = 0; i < connectedNodes.length; i++) {
-				currConnectedNode = connectedNodes[i];
-				addSolution(self, currConnectedNode, _solution, mulWeight(weight, currConnectedNode.weight));
-			}
+            if(_toNode.exprType == EXPR_SI) {
+                // Il nodo in questione è una simple inclusion: potrebbe possedere un linking monitor
+                bytes32Array = _p.linkingMonitors[_toId];
+                for(i = 0; i < bytes32Array.length; i++) {
+                    // Per ciascun linking monitor:
+                    exprId = bytes32Array[i];
+                    processLinkingSolution(_p, _p.nodeMap[exprId], exprId, _solution, exprs[exprId].roleB, _weight);
+                }
+            }
+        }
+    }
 
-			if(_nodeRef.nodeType == NodeType.SIMPLE_INCLUSION) {
-				bytes2 roleB;
-				uint[] storage linkedInclusionsIndices = self.linkedEdges[_nodeRef.index];
+    // ----------------------------------------------------- //
 
-				for(uint j = 0; j < linkedInclusionsIndices.length; j++) {
-					(,,roleB) = self.linkedInclusions.get(linkedInclusionsIndices[j]);
-					if(policies[_solution][roleB].exists)
-						addEdge(self, addSimpleInclusionNode(self, _solution, roleB), NodeRef(NodeType.LINKED_INCLUSION, weight, linkedInclusionsIndices[j]));
-				}
-			}
-		}
-	}
+    function getRoleSolutionsCount(uint _proofIndex, address _principal, bytes2 _rolename) public view returns(uint) {
+        return proofGraphs[_proofIndex].nodeMap[packExpr(_principal, _rolename)].solutions.size();
+    }
 
-	// ----------------------------------------------------- //
+    function getRoleSolution(uint _proofIndex, address _principal, bytes2 _rolename, uint _solutionIndex) public view returns(address, uint8) {
+        return proofGraphs[_proofIndex].nodeMap[packExpr(_principal, _rolename)].solutions.get(_solutionIndex);
+    }
 
-	ProofGraph[] proofGraphs;
-
-	function getProofSolutionCount(uint proof) public view returns(uint) {
-		return proofGraphs[proof].solutions[1][0].count();
-	}
-
-	function getProofSolution(uint proof, uint index) public view returns(address, uint8 weight) {
-		return proofGraphs[proof].solutions[1][0].get(index);
-	}
-
-
-	function backwardSearch(address principal, bytes2 rolename) external {
-		require(policies[principal][rolename].exists, "role does not exists");
-
-		ProofGraph storage pGraph = proofGraphs.push();
-		initQueue(pGraph);
-		addSimpleInclusionNode(pGraph, principal, rolename);
-		NodeRef memory currNode;
-		uint i;
-
-		address addrA;
-		address addrB;
-		bytes2 roleA;
-		bytes2 roleB;
-		uint8 weight;
-
-		do {
-			currNode = dequeue(pGraph);
-
-			if(currNode.nodeType == NodeType.SIMPLE_INCLUSION) {
-				(addrA, roleA) = pGraph.simpleInclusions.get(currNode.index);
-				Role storage includedRole = policies[addrA][roleA];
-
-				for(i = 0; i < includedRole.intersectionInclusions.count(); i++) {
-					(addrA, roleA, addrB, roleB, weight) = includedRole.intersectionInclusions.get(i);
-					currNode.weight = weight;
-					addEdge(pGraph, addIntersectionInclusionNode(pGraph, addrA, roleA, addrB, roleB), currNode);
-				}
-				for(i = 0; i < includedRole.linkedInclusions.count(); i++) {
-					(addrA, roleA, roleB, weight) = includedRole.linkedInclusions.get(i);
-					currNode.weight = weight;
-					addEdge(pGraph, addLinkedInclusionNode(pGraph, addrA, roleA, roleB), currNode);
-				}
-				for(i = 0; i < includedRole.simpleInclusions.count(); i++) {
-					(addrA, roleA, weight) = includedRole.simpleInclusions.get(i);
-					currNode.weight = weight;
-					addEdge(pGraph, addSimpleInclusionNode(pGraph, addrA, roleA), currNode);
-				}
-				for(i = 0; i < includedRole.simpleMembers.count(); i++) {
-					(addrA, weight) = includedRole.simpleMembers.get(i);
-					currNode.weight = weight;
-					addEdge(pGraph, addSimpleMemberNode(pGraph, addrA), currNode);
-				}
-			}
-			else if(currNode.nodeType == NodeType.LINKED_INCLUSION) {
-				(addrA, roleA, roleB) = pGraph.linkedInclusions.get(currNode.index);
-				currNode.weight = MAX_WEIGHT_BYTE;
-				addLinkedEdge(pGraph, addSimpleInclusionNode(pGraph, addrA, roleA), currNode);
-			}
-			else if(currNode.nodeType == NodeType.INTERSECTION_INCLUSION) {
-				(addrA, roleA, addrB, roleB) = pGraph.intersectionInclusions.get(currNode.index);
-				currNode.weight = MAX_WEIGHT_BYTE;
-				addEdge(pGraph, addSimpleInclusionNode(pGraph, addrA, roleA), currNode);
-				addEdge(pGraph, addSimpleInclusionNode(pGraph, addrB, roleB), currNode);
-			}
-
-		} while(!isQueueEmpty(pGraph));
-	}
 }
